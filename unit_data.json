@@ -1,0 +1,11 @@
+{
+    "units":[
+        {
+            "name":"Candy",
+            "texture":"/static/sheet1024.png",
+            "maxHealth":100,
+            "behaviors":["controllerMove"]
+        }
+    ]
+
+}
