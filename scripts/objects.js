@@ -1,18 +1,76 @@
+
+class Cell{
+    constructor(cellPrototype, pos={x:0, y:0}, gs){
+        this.proto = cellPrototype
+        this.pos = pos // relative to screen
+        this.size = this.proto.data.size // relative to grid units
+        this.gs = gs
+        this.color = this.proto.data.color
+        this.tex = this.proto.tex
+        this.behaviors = []
+        this.data = this.proto.data
+        this.proto.behaviors.forEach(b=>{
+            try{
+                let behavior = behaviorRegistry[b]
+                let bvr = Object.assign({}, behavior)
+                bvr.setup(this)
+                this.behaviors.push(bvr)
+            } catch (e) {
+                console.log("these behaviors suck", e)
+            }
+        })
+    }
+
+    update(data){
+        // call behavior update functions
+        this.behaviors.forEach((behavior)=>{
+        if (behavior.update)
+            behavior.update(data)
+        })
+    }
+    getSprite(){
+        let sprite = {
+            x: this.pos.x,
+            y: this.pos.y,
+            w: this.size.w * this.gs,
+            h: this.size.h * this.gs,
+            r: this.color.r,
+            g: this.color.g,
+            b: this.color.b,
+            tex: this.tex
+        }
+        return sprite
+    }
+    getCell(){
+        let cell = {
+            x: this.pos.x,
+            y: this.pos.y,
+            w: this.size.w * this.gs,
+            h: this.size.h * this.gs,
+            isStatic: true,
+            ref: this
+        }
+        //console.log(cell)
+        return cell
+    }
+}
+
 class Grid {
-    constructor(canvasWidth, canvasHeight, textureLocations) {
+    constructor(canvasWidth, canvasHeight, cellPrototypes) {
         this.ww = canvasWidth
         this.wh = canvasHeight
         this.cells = []
-        this.cellWidth = this.wh*.125
+        this.cellWidth = this.ww*.1
+        this.grndLvl = this.wh*.5
         this.speed = 1
         this.portraitMode = this.wh > this.ww ? true : false
-        this.texLoc = textureLocations
+        this.cellPrototypes = cellPrototypes
         this.textures = {}
         this.buildOk = true
         messageBus.on("buildTimeout", _=>{this.buildOk = true})
         // load ground textures
     }
-    loadTextures(){}
+    loadTextures(){} // load from prototypes
     addDebugCell(row, col, width, height, isObstacle=false){
         let cell = {
             x: row, 
@@ -28,87 +86,81 @@ class Grid {
         //console.log(cell)
         this.cells.push(cell)
     }
-    addCell(pos, size, color, tex, isObst){
-        let cell = {
-            x: pos.x, 
-            y: pos.y, 
-            w: size.w, 
-            h: size.h,
-            r: color.r,
-            g: color.g,
-            b: color.b,
-            tex: tex ? tex : null
-        }
+    addCell(proto, pos){
+        let cell = new Cell(proto, pos, this.cellWidth)
         //console.log(cell)
         this.cells.push(cell)
     }
+    addCellPrototype(proto, pos){
+        let cell = new Cell(proto, pos, this.cellWidth)
+        this.cells.push(cell)
+    }
     addGround(x){
-        this.addCell({x:x, y:this.wh*.5}, 
-            {w:this.portraitMode ? this.ww : this.ww/2, 
-                h:this.wh*.6},
-            {r: 0, g: 200, b: 0}, null)
+        let proto = this.getCellPrototype("ground")
+        this.addCell(proto, {x:x, y:this.wh*.5})
     }
     addObSmall(x){
-        this.addCell({x:x, y:(this.wh*.5)-this.cellWidth}, 
-            {w:this.cellWidth*2, h:this.cellWidth},
-            {r: 200, g: 150, b: 120}, null)
+        let proto = this.getCellPrototype("obSmall")
+        this.addCell(proto, {x:x, y:(this.grndLvl)-this.cellWidth*3})
     } // fire hydrant, bush
     addObLarge(x){
-        this.addCell({x:x, y:(this.wh*.5)-this.cellWidth*2}, 
-            {w:this.cellWidth*2, h:this.cellWidth*2},
-            {r: 200, g: 200, b: 200}, null)
+        let proto = this.getCellPrototype("obLarge")
+        this.addCell(proto, {x:x, y:(this.grndLvl)-this.cellWidth*4})
     } // foreground tree, truck, brick building
     addPlat(x){
-        this.addCell({x:x, y:(this.wh*.5)-this.cellWidth*3}, 
-            {w:this.cellWidth*2, h:this.cellWidth*.5},
-            {r: 100, g: 100, b: 100}, null)
+        let proto = this.getCellPrototype("platform")
+        this.addCell(proto, {x:x, y:(this.grndLvl)-this.cellWidth*6})
     } // tree limb, roof, construction platform
     initWorld(){
         this.addGround(0)
-        this.addObLarge(this.ww*.55)
-        this.addObSmall(this.ww*.5)
-        this.addPlat(this.ww*.75)
+        //this.addObLarge(this.ww*1.5)
+        //this.addObSmall(this.ww*.5)
+        this.addPlat(this.ww*2)
+        console.log(this.cells)
     }
-    update(){
+    update(data){
         if (this.cells.length < 20 && this.buildOk){
             this.buildOk = false
-            this.generateNext()
+            this.generateNext(data.probabilityMatrix)
             startTimer(1, ()=>{messageBus.emit("buildTimeout")})
         }
-        this.cells.forEach((cell)=>{
-            cell.x -= this.speed;
+        this.cells.forEach((cell)=>{ // move all cells to the left
             let index = this.checkOffScreen(cell)
             if (index){            
                 delete this.cells[index]
+            } else {
+                cell.update(data)
             }
-        }) // move all cells to the left
+        }) 
         if (this.cells.length >= 20){
             this.cells = this.cells.filter(element => element)
         }
         
     }
+    clear(){
+        this.cells = []
+    }
     setSpeed(speed){
         this.speed=speed
     }
-    generateNext(){
-        let noise = Math.random()
-        if (noise > .8){
-            // console.log("spawning ground")
+    generateNext(probabilityMatrix){
+        let pm = probabilityMatrix
+        let groundProb = Math.random()
+        let smallProb = Math.random()
+        let largeProb = Math.random()
+        let platProb = Math.random()
+        if (groundProb <= pm.ground)
             this.addGround(this.ww)
-            return
-        }else if (noise > .6){
-            // console.log("spawning small obstacle")
+            
+        if (smallProb <= pm.small)
             this.addObSmall(this.ww*2)
-            return
-        }else if (noise > .3){
-            // console.log("spawning large obstacle")
+      
+        if (largeProb <= pm.large)
             this.addObLarge(this.ww*3)
-            return
-        }else if (noise > .0){
-            // console.log("spawning air platform")
+            
+        if (platProb <= pm.platform)
             this.addPlat(this.ww*4)
-            return
-        }
+            
     }
     checkOffScreen(cell){
         if (cell.x+cell.w < 0){
@@ -117,23 +169,52 @@ class Grid {
         }
         return false
     }
+    async loadCellPrototypes(url){
+        try{
+            let response = await fetch(url)
+            //console.log(JSON.stringify(response))
+            let protos = await response.json()
+            this.cellPrototypes = protos.cells
+            return this.cellPrototypes
+        } catch (e) {
+            console.error("failed to get cell data", e.message)
+        }
+    }
+    getCellPrototype(name){
+        let proto = {}
+        // console.log(this.cellPrototypes)
+        this.cellPrototypes.forEach((cell)=>{
+            if (cell.name == name){
+                proto = cell
+            }
+        })
+        return proto
+    }
 }
 
 class Unit{
     constructor(unitPrototype, spawnX=0, spawnY=0, gridSize=100){
         this.proto = unitPrototype
-        this.tex
+        /*if (this.proto)
+        console.log(JSON.stringify(this.proto))        
+       */ this.tex
         this.x = spawnX;
         this.y = spawnY;
         this.vx = 0
         this.vy = 0
-        this.fric = .08
+        this.fric = .06
         this.gs = gridSize;
         this.health
-        this.maxHealth = this.proto.maxHealth
-        this.speed = 10
-        this.target
+        this.maxHealth = 100
+        this.maxJumps = 3
+        this.speed = 1
+        this.jumpStr = 20
+        this.onGround = false
+        this.target = null
         // composite behaviorals
+        //if (this.proto)
+        // console.log(JSON.stringify(this.proto))
+        this.data = this.proto.data
         this.behaviors = []
         this.proto.behaviors.forEach(b=>{
             try{
@@ -145,68 +226,90 @@ class Unit{
                 console.log("these behaviors suck")
             }
         })
-        console.log(this.x, this.y, this.vx, this.vy)
+        //console.log(this.x, this.y, this.vx, this.vy)
     }
-    update(){
+    update(world){
         // call behavior update functions
         this.behaviors.forEach((behavior)=>{
-            behavior.update()
+            if (behavior.update)
+                behavior.update(world)
         })
     }
-    getCell(){
-        let cell = {
+    getSprite(){
+        let sprite = {
             x: this.x, 
             y: this.y, 
             w: this.gs, 
             h: this.gs,
-            z: 0
+            tex: this.tex
         }
-        return cell
-    }
-    
+        return sprite
+    }    
+    getCell(){
+        let sprite = {
+            x: this.x, 
+            y: this.y, 
+            w: this.gs, 
+            h: this.gs,
+            ref: this
+        }
+        return sprite
+    }    
+    setTarget(target){
+        this.target = target
+    }    
 }
 
 class UnitManager{
-    constructor(grid){
+    constructor(grid, phys){
         this.units = []
         this.textures = []
         this.grid = grid
         this.unitPrototypes
         this.addUnit = this.addUnit.bind(this);
-        messageBus.on("unitSpawnRequest", this.addUnit)
+        this.phys = phys
     }
     
-    addUnit(coord){
-        let unit = new Unit(player.selectedUnit, coord.x, coord.y, grid.cellWidth)
+    addUnit(unit, coord){
+        // console.log(coord)
+        let u = new Unit(unit, coord.x, coord.y, grid.cellWidth)
         this.textures.forEach(tex=>{
-            if (tex.name == unit.proto.name)
-                unit.tex = tex.texture
+            if (tex.name == u.proto.name)
+                u.tex = tex.texture
         })
-        this.units.push(unit)
+        u.data.phys = this.phys
+        this.units.push(u)
+        //console.log(coord.ref.activeUnits)
+        // coord.ref.activeUnits.push(u)
         //messageBus.off("mouseClick")
-        // console.log(this.units)
+        console.log(this.units)
+        return u
     }
     remUnit(coord){}
+    clear(){
+        this.units = []
+    }
     getUnitsAround(coord, rad){}
-    isCellEmpty(coord){}
     updateAll(){
         this.units.update()
     }
     async loadUnitPrototypes(url){
         try{
             let response = await fetch(url)
+            // console.log(JSON.stringify(response))
             let protos = await response.json()
-            this.unitPrototypes = protos
-            //console.log(this.unitPrototypes)
-            return this.unitPrototypes
-        } catch {
-            console.log("failed to get unit data")
+            this.unitPrototypes = protos.units
+            units.unitPrototypes.forEach((unit)=>{
+                units.textures.push({"name":unit.name, "texture":loadImage(unit.texture)})
+            })
+        } catch (e) {
+            console.error("failed to get unit data", e.message)
         }
     }
     getUnitPrototype(name){
         let proto = {}
-        //console.log(this.unitPrototypes)
-        this.unitPrototypes.units.forEach((unit)=>{
+        console.log(this.unitPrototypes)
+        this.unitPrototypes.forEach((unit)=>{
             if (unit.name == name){
                 proto = unit
             }
@@ -216,11 +319,11 @@ class UnitManager{
 }
 
 class Player{
-    constructor(){
-        this.unlockedUnits = []
-        this.matchUnits = []
+    constructor(unitManager){
         this.activeUnits = []
         this.selectedUnit = null
+        this.unitManager = unitManager
+        this.data = {}
         this.gold = 1000 // match currency to place units
         this.diam = 100 // currency to unlock new units
         this.xp = 0 // upgrades units, for both the player and the AI
@@ -230,7 +333,7 @@ class Player{
     load(){} // get from localStorage
     unlockUnit(unitPrototype){
         this.unlockedUnits.push(unitPrototype)
-        console.log(unitPrototype.name + " unlocked")
+        //console.log(unitPrototype.name + " unlocked")
     }
     addToMatch(name){
         this.unlockedUnits.forEach(unit => {
@@ -241,28 +344,132 @@ class Player{
             if (unit.name == name) {
                 this.matchUnits.push(unit)
                 //console.log(this.matchUnits)
-                console.log(unit.name+" added to lineup")
+                //console.log(unit.name+" added to lineup")
             }
         })
     }
     selectUnit(unitName){
-        this.matchUnits.forEach(unit=>{
-            if (unit.name == unitName){
-                this.selectedUnit = unit
-                messageBus.emit("unitSpawnRequest", {x: 0, y:0})
-                console.log(unit.name+" selected")
+        console.log("selecting", unitName)
+        let proto = this.unitManager.getUnitPrototype(unitName)
+        let plyrSpawn = {x:0, y:0}
+        let unit = this.unitManager.addUnit(proto, plyrSpawn)
+        this.activeUnits.push(unit)
+    }
+}
+
+class AI{
+    constructor(unitManager, player){
+        this.activeUnits = []
+        this.selectedUnit = null
+        this.player = player
+        this.unitManager = unitManager
+        
+        this.gold = 1000 // match currency to place units
+        this.diam = 100 // currency to unlock new units
+        this.xp = 0 // upgrades units, for both the player and the AI
+        this.selectUnit = this.selectUnit.bind(this)
+        messageBus.on("aiSpawnRequest", this.selectUnit)
+    }
+    
+    save(){} // serialize to localStorage
+    load(){} // get from localStorage
+    unlockUnit(unitPrototype){
+        this.unlockedUnits.push(unitPrototype)
+        //console.log(unitPrototype.name + " unlocked")
+    }
+    addToMatch(name){
+        this.unlockedUnits.forEach(unit => {
+            if (this.matchUnits.includes(unit)){
+                //console.log(unit.name + " already in lineup")
+                return
             }
+            if (unit.name == name) {
+                this.matchUnits.push(unit)
+                console.log("ai match units", this.matchUnits)
+                //console.log(unit.name+" added to lineup")
+            }
+        })
+    }
+    selectUnit(data){
+        console.log("spawning", data.unit)
+        let unit = this.unitManager.addUnit(this.unitManager.getUnitPrototype(data.unit), data.coord)
+        this.activeUnits.push(unit)
+    }
+    update(){
+        this.activeUnits.forEach(unit=>{
+            let plyrUnit = this.player.activeUnits[0]
+            if (plyrUnit.x < unit.x) unit.data.cmd = "left"
+            if (plyrUnit.x > unit.x) unit.data.cmd = "right"
         })
     }
 }
 
-class UI{
-    constructor(schema){
-        this.buttons = []
-        this.text = []
+class Button{
+    constructor(name, callback, x=0, y=0, w=100, h=50, container){
+        this.button = document.createElement('button');
+        this.button.innerText = name;
+        this.button.style.position = 'absolute';
+        this.button.style.left = `${x}px`;
+        this.button.style.top = `${y}px`;
+        this.button.style.width = `${w}px`;
+        this.button.style.height = `${h}px`;
+        this.button.style.zIndex = "1000";
+        this.callback = callback
+        //console.log(this.callback)
+        this.keybind = null
+        this.container = container
 
+        this.pressed = this.pressed.bind(this)
+        this.released = this.released.bind(this)
+        this.button.addEventListener("mousedown", this.pressed)
+        this.button.addEventListener("touchstart", this.pressed)
+        this.button.addEventListener("mouseup", this.released)
+        this.button.addEventListener("touchend", this.released)
+
+        this.bindPressed = this.bindPressed.bind(this)
+        this.bindReleased = this.bindReleased.bind(this)
+        this.container.addEventListener("keydown", this.bindPressed)
+        this.container.addEventListener("keyup", this.bindReleased)
+
+        this.container.appendChild(this.button);
+    }
+    pressed(e){
+        //console.log(this.callback)
+        e.stopPropagation();
+        this.callback(true)
+        // console.log("pressed")
+        //messageBus.emit(signal, true);
+    }
+    released(e){
+        //console.log(this.callback)
+        e.stopPropagation();
+        this.callback(false)
+        //messageBus.emit(signal, false);
+    }
+    bindPressed(e){
+        if (!this.keybind)
+            return
+        console.log("pressing", e.key)
+        e.stopPropagation()
+        if (e.key == this.keybind){}
+    }
+    bindReleased(e){
+        if (!this.keybind)
+            return
+        console.log("released", e.key)
+        e.stopPropagation()
+        if (e.key == this.keybind){}
+    }
+    bindKey(key){
+        this.keybind = key
+    }
+}
+
+class UI{
+    constructor(id, schema){
         // Create a container div
         this.container = document.createElement("div")
+        this.container.id = id
         this.container.style.position = "absolute"   // <-- MUST have position for z-index to work
         this.container.style.top = "0px"
         this.container.style.left = "0px"
@@ -270,33 +477,22 @@ class UI{
         this.container.style.height = "100%"
         this.container.style.zIndex = "1000"        // higher than canvas
         this.container.style.pointerEvents = "auto" // make sure it receives mouse events
-
+        this.screens = {}
+        this.buttons = {}
         document.body.append(this.container)
     }
-    
-    addButton(name, signal, x, y, w=100, h=50){
-        let button = document.createElement('button');
-        button.innerText = name;
-        button.style.position = 'absolute';
-        button.style.left = `${x}px`;
-        button.style.top = `${y}px`;
-        button.style.width = `${w}px`;
-        button.style.height = `${h}px`;
-        button.style.zIndex = "1000";
-        button.onmousedown = function(e){
-            e.stopPropagation();
-            messageBus.emit(signal, true);
-        }
-
-        button.onmouseup = function(e){
-            e.stopPropagation();
-            messageBus.emit(signal, false);
-        }
-
-        this.container.appendChild(button);
+    getButton(name){
+        if (this.buttons[name])
+            return this.buttons[name]
     }
-    addPara(text, x, y, w=100, h=50){
+    addButton(name, callback, x=0, y=0, w=100, h=50){
+        console.log(callback)
+        let button = new Button(name, callback, x, y, w, h, this.container)
+        this.buttons[name] =  button
+    }
+    addPara(id, text, x, y, w=100, h=50){
         let el = document.createElement('p');
+        el.id = id;
         el.innerText = text;
         el.style.position = 'absolute';
         el.style.left = `${x}px`;
@@ -306,5 +502,21 @@ class UI{
         el.style.zIndex = "1000";
 
         this.container.appendChild(el);
+    }
+    updateText(id, text, x, y){
+        let el = document.getElementById(id)
+        el.innerText = text
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+    }
+    addScreen(name, buildFunc){
+        this.screens[name] = buildFunc
+    }
+    showScreen(name){
+        this.clear()
+        this.screens[name]()
+    }
+    clear(){
+        this.container.innerHTML = ""
     }
 }

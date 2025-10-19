@@ -3,9 +3,34 @@
         {
             "name":"Candy",
             "texture":"/static/sheet1024.png",
-            "maxHealth":100,
+            "data":{
+                "speed":1
+            },
             "behaviors":["controllerMove"]
+        },
+        {
+            "name":"snake",
+            "texture":"/static/snake.png",
+            "data":{
+                "speed":0
+            },
+            "behaviors":["aiBasicMove", "basicGravity"]
+        },
+        {
+            "name":"spider",
+            "texture":"/static/snake.png",
+            "data":{
+                "speed":0.8
+            },
+            "behaviors":["aiSpiderMove", "basicGravity"]
+        },
+        {
+            "name":"hawk",
+            "texture":"/static/snake.png",
+            "data":{
+                "speed":0.8
+            },
+            "behaviors":["aiHawkMove", "basicGravity"]
         }
     ]
-
 }

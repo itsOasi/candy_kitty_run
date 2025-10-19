@@ -72,13 +72,13 @@ let messageBus = {
             this.listeners[event] = [];
         }
         this.listeners[event].push(callback);
-        console.log("created callback "+event)
+        //console.log("created callback "+event)
     },
     off: function(event) {
         if (this.listeners[event]) {
             delete this.listeners[event]
         }
-        console.log("removed callback "+event)
+        //console.log("removed callback "+event)
     },
     emit: function(event, data) {
         //console.log("emitting "+event+" with data "+JSON.stringify(data))

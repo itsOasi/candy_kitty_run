@@ -1,0 +1,47 @@
+{
+    "cells":[
+        {
+            "name":"ground",
+            "texture":"",
+            "data":{
+                "spawnUnit":"snake",
+                "spawnChance": 0.5,
+                "color": {"r": 0, "g": 200, "b": 0},
+                "size": {"w":10,"h":10}
+            },
+            "behaviors":["cellBasicSpawnMove"]
+        },
+        {
+            "name":"obSmall",
+            "texture":"",
+            "data":{
+                "spawnUnit":"spider",
+                "spawnChance": 0.5,
+                "color": {"r": 200, "g": 150, "b": 120},
+                "size": {"w":2,"h":1}
+            },
+            "behaviors":["cellBasicSpawnMove"]
+        },
+        {
+            "name":"obLarge",
+            "texture":"",
+            "data":{
+                "spawnUnit":"hawk",
+                "spawnChance": 0.5,
+                "color": {"r": 200, "g": 200, "b": 200},
+                "size": {"w":2,"h":2}
+            },
+            "behaviors":["cellBasicSpawnMove"]
+        },
+        {
+            "name":"platform",
+            "texture":"",
+            "data":{
+                "color": {"r": 200, "g": 200, "b": 200},
+                "size": {"w":2,"h":0.5}
+            },
+            "behaviors":["cellBasicSpawnMove"]
+        }
+    ]
+
+}

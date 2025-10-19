@@ -13,16 +13,16 @@ class Physics {
         unit.vy += dy
     }
     applyFriction(unit){
-        unit.vx *= unit.fric
+        unit.vx *= 1-unit.fric
     }
     update(world) {
         world.forEach(obj => {
             if (!obj.isStatic) {
-                console.log(obj.x, obj.y, obj.ref.vx, obj.ref.vy)
+                //console.log(obj.x, obj.y, obj.ref.vx, obj.ref.vy)
                 // Move
                 obj.x += obj.ref.vx;
                 obj.y += obj.ref.vy;
-                console.log(obj.x, obj.y)
+                //console.log(obj.x, obj.y)
                 // Collisions
                 this.checkAABBCollision(obj, world);
 
@@ -46,9 +46,12 @@ class Physics {
             if (unit === other) return; // skip self
             if (this.AABB(unit, other)) {
                 if (other.isStatic) {
-                    this.resolveCollisions(unit, other);
-                    unit._colliding = true;
-                    other._colliding = true;
+                    if (Math.abs(unit.ref.vy) > 0){
+                        unit.ref.vy *= .01
+                        unit.ref.vx *= .01
+                    }     
+                    this.resolveCollisions(unit, other)              
+                    //console.log(unit.ref.onGround)
                 }
             }
         });
@@ -73,15 +76,15 @@ class Physics {
             if (overlapX < overlapY) {
                 // Horizontal collision
                 unitA.x += dx > 0 ? overlapX : -overlapX;
-                unitA.vx = 0;
+                unitA.vx *= .01;
             } else {
                 // Vertical collision
                 unitA.y += dy > 0 ? overlapY : -overlapY;
-                unitA.vy = 0;
+                unitA.vy *= .01;
             }
         }
     }
-
+    
     drawDebug(world) {
         this.ctx.save();
         world.forEach(obj => {
@@ -93,5 +96,24 @@ class Physics {
             obj._colliding = false;
         });
         this.ctx.restore();
+    }
+    
+    castRay(origin, direction, world, maxDist = 1000) {
+        if (!world)
+            return
+        const step = 1;
+        for (let t = 0; t < maxDist; t += step) {
+            const hitX = origin.x + direction.x * t;
+            const hitY = origin.y + direction.y * t;
+            for (let obj of world) {
+                if (
+                    hitX >= obj.ref.x && hitX <= obj.ref.x + obj.ref.w &&
+                    hitY >= obj.ref.y && hitY <= obj.ref.y + obj.ref.h
+                ) {
+                    return { hit: obj, point: { x:hitX, y:hitY } };
+                }
+            }
+        }
+        return null;
     }
 }
